@@ -8,7 +8,7 @@ import concurrent.futures
 def download_image(img_url, local_path, max_retries=3):
     """Hàm tải ảnh an toàn với cơ chế thử lại (Retry) chống đứt cáp"""
     if os.path.exists(local_path):
-        return  # Bỏ qua nếu ảnh đã tồn tại
+        return  
     
     headers = {'User-Agent': 'Mozilla/5.0'}
     for attempt in range(max_retries):
@@ -19,10 +19,10 @@ def download_image(img_url, local_path, max_retries=3):
                     f_img.write(r.content)
                 return
             elif r.status_code == 404:
-                return # Bỏ qua nếu server không có file này
+                return 
         except Exception:
             if attempt < max_retries - 1:
-                time.sleep(2) # Đợi 2s rồi thử lại
+                time.sleep(2) 
 
 def process_tft_augments_multithread(input_file, output_file, image_folder='augments_images'):
     try:
@@ -36,12 +36,11 @@ def process_tft_augments_multithread(input_file, output_file, image_folder='augm
         augments_list = raw_data if isinstance(raw_data, list) else raw_data.get('augments', [])
 
         processed_augments = []
-        download_tasks = [] # Danh sách gom các URL cần tải
+        download_tasks = []
         
         print(f"Đang xử lý text {len(augments_list)} lõi nâng cấp...")
 
         for index, item in enumerate(augments_list, start=1):
-            # --- 1. Xử lý Description ---
             desc_raw = item.get('desc', '')
             effects = item.get('effects', {})
             
@@ -49,15 +48,12 @@ def process_tft_augments_multithread(input_file, output_file, image_folder='augm
                 var_name = match.group(1)
                 val = effects.get(var_name)
                 if val is not None:
-                    # Làm tròn số thập phân cho đẹp
                     return str(int(val)) if isinstance(val, float) and val.is_integer() else str(val)
                 return match.group(0)
 
             clean_desc = re.sub(r'@(\w+)@', replace_var, desc_raw)
-            # Dọn dẹp luôn mấy thẻ HTML như <br>, <tftitemrules> cho sạch DB
             clean_desc = re.sub(r'<[^>]*>', '', clean_desc).replace('&nbsp;', ' ').strip()
 
-            # --- 2. Xác định Tier (Độ hiếm) ---
             rarity = (item.get('rarity') or '').lower()
             api_name = (item.get('apiName') or '').lower()
             raw_icon = item.get('icon', '')
@@ -70,15 +66,12 @@ def process_tft_augments_multithread(input_file, output_file, image_folder='augm
             else:
                 tier = 1
 
-            # --- 3. Chuẩn bị Link Ảnh ---
             local_icon_path = None
             if raw_icon:
                 img_url = "https://raw.communitydragon.org/latest/game/" + icon_lower.replace('.tex', '.png')
                 local_icon_path = f"{image_folder}/{index}.png"
-                # Thêm vào danh sách tải thay vì tải ngay lập tức
                 download_tasks.append((img_url, local_icon_path))
 
-            # --- 4. Gom Data ---
             processed_augments.append({
                 "id": index,
                 "name": item.get('name'),
@@ -87,22 +80,18 @@ def process_tft_augments_multithread(input_file, output_file, image_folder='augm
                 "icon_path": local_icon_path 
             })
 
-        # --- 5. Lưu JSON CỰC NHANH ---
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(processed_augments, f, ensure_ascii=False, indent=4)
         print(f"✅ Đã lưu xong Database {len(processed_augments)} bản ghi vào: {output_file}")
 
-        # --- 6. KÍCH HOẠT TẢI ẢNH ĐA LUỒNG ---
         if download_tasks:
             print(f"🔥 Bắt đầu tải {len(download_tasks)} ảnh bằng Đa luồng (10 workers)...")
-            # Dùng 10 workers để tải 10 ảnh cùng lúc (nhanh gấp 10 lần bình thường)
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = [executor.submit(download_image, url, path) for url, path in download_tasks]
                 
                 completed = 0
                 for _ in concurrent.futures.as_completed(futures):
                     completed += 1
-                    # Cứ 20 ảnh in ra 1 lần cho đỡ trôi terminal
                     if completed % 20 == 0 or completed == len(download_tasks):
                         print(f"  -> Đã tải {completed}/{len(download_tasks)} ảnh...")
         else:
